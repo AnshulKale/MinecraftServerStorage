@@ -1,8 +1,5 @@
-@'
 @echo off
-rem ===== EDIT THESE =====
-set "PLAYER_NAME=iamnotamerican2"
+set "PLAYER_NAME=PlayerA"
 set "ADB=adb"
-set "WORLD_FOLDER=Ja5sNNhNFgI="
+set "WORLD_FOLDER=PUT_WORLD_FOLDER_NAME_HERE"
 set "MC_WORLDS_PATH=/sdcard/Android/data/com.mojang.minecraftpe/files/games/com.mojang/minecraftWorlds"
-'@ | Set-Content config.example.bat
