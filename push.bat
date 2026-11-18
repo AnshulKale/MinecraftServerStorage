@@ -5,6 +5,14 @@ cd /d "%~dp0"
 
 call config.bat
 
+echo Checking Git status...
+for /f "delims=" %%A in ('git status --porcelain') do (
+    echo ERROR: Local changes detected: %%A
+    echo Resolve them before pushing.
+    pause
+    exit /b 1
+)
+
 echo Checking phone...
 "%ADB%" get-state >nul 2>&1
 if errorlevel 1 (
@@ -15,7 +23,7 @@ if errorlevel 1 (
 
 echo Checking lock...
 if not exist LOCK.txt (
-    echo ERROR: No lock found. Refusing to push.
+    echo ERROR: No lock found.
     pause
     exit /b 1
 )
@@ -29,86 +37,89 @@ if /i not "%LOCKOWNER%"=="%PLAYER_NAME%" (
     exit /b 1
 )
 
+set "PHONE_WORLD=%MC_WORLDS_PATH%/%WORLD_FOLDER%"
+set "TEMP_ROOT=%TEMP%\MCWorld_%RANDOM%"
+
 echo Stopping Minecraft...
 "%ADB%" shell am force-stop com.mojang.minecraftpe
 timeout /t 2 >nul
 
-set "PHONE_WORLD=%MC_WORLDS_PATH%/%WORLD_FOLDER%"
-
 echo Verifying phone world...
 "%ADB%" shell "[ -f '%PHONE_WORLD%/level.dat' ]"
+if errorlevel 1 goto failed
+
+echo Downloading world to temporary backup...
+mkdir "%TEMP_ROOT%\download"
+if errorlevel 1 goto failed
+
+"%ADB%" pull "%PHONE_WORLD%/." "%TEMP_ROOT%\download\"
+if errorlevel 1 goto failed
+
+if not exist "%TEMP_ROOT%\download\level.dat" goto failed
+
+echo Preserving previous local backup...
+if exist world (
+    move world "%TEMP_ROOT%\previous_world"
+    if errorlevel 1 goto failed
+)
+
+echo Installing downloaded world...
+move "%TEMP_ROOT%\download" world
 if errorlevel 1 (
-    echo ERROR: World not found.
-    pause
-    exit /b 1
+    if exist "%TEMP_ROOT%\previous_world" move "%TEMP_ROOT%\previous_world" world
+    goto failed
 )
 
-echo Creating temporary backup...
-if exist world_new rmdir /s /q world_new
-mkdir world_new
-
-echo Copying world from phone...
-"%ADB%" pull "%PHONE_WORLD%/." "world_new/"
-if errorlevel 1 (
-    echo ERROR: Transfer failed. Existing backup preserved.
-    rmdir /s /q world_new
-    pause
-    exit /b 1
-)
-
-if not exist world_new\level.dat (
-    echo ERROR: level.dat missing.
-    rmdir /s /q world_new
-    pause
-    exit /b 1
-)
-
-echo Replacing previous backup...
-if exist world_old rmdir /s /q world_old
-if exist world ren world world_old
-ren world_new world
-
-if errorlevel 1 (
-    echo ERROR: Replacement failed.
-    if exist world_old ren world_old world
-    pause
-    exit /b 1
-)
-
-echo Uploading to GitHub...
+echo Staging world changes...
 git add world
-git commit -m "%PLAYER_NAME% played - %date% %time%"
+if errorlevel 1 goto failed
+
+git diff --cached --quiet
 if errorlevel 1 (
-    echo ERROR: Commit failed. Lock remains active.
-    pause
-    exit /b 1
+    echo Creating world backup commit...
+    git commit -m "%PLAYER_NAME% played - %date% %time%"
+    if errorlevel 1 goto failed
+) else (
+    echo No world changes detected. Skipping commit.
 )
 
+echo Uploading world to GitHub...
 git push
 if errorlevel 1 (
-    echo ERROR: Push failed. Lock remains active.
-    echo Do not allow another player to pull.
+    echo ERROR: Upload failed. Lock remains active.
+    echo Do not let another player play.
     pause
     exit /b 1
 )
 
 echo Releasing lock...
 git rm LOCK.txt
+if errorlevel 1 goto failed
+
 git commit -m "Release lock: %PLAYER_NAME%"
-if errorlevel 1 (
-    echo ERROR: Lock removal commit failed.
-    pause
-    exit /b 1
-)
+if errorlevel 1 goto failed
 
 git push
 if errorlevel 1 (
     echo ERROR: Lock release push failed.
+    echo Check GitHub before allowing another player to play.
     pause
     exit /b 1
 )
 
 echo.
-echo SUCCESS: World uploaded and lock released.
-echo Your world_old folder is retained as a local backup.
+echo ========================================
+echo SUCCESS: World uploaded to GitHub.
+echo Lock released.
+echo ========================================
+echo Previous local backup: %TEMP_ROOT%\previous_world
 pause
+exit /b 0
+
+:failed
+echo.
+echo ERROR: Operation failed.
+echo Do not play or release the lock manually.
+echo Check GitHub and local files before retrying.
+pause
+exit /b 1
