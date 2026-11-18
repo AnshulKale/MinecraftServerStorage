@@ -52,7 +52,7 @@ echo Downloading world to temporary backup...
 mkdir "%TEMP_ROOT%\download"
 if errorlevel 1 goto failed
 
-"%ADB%" pull "%PHONE_WORLD%/." "%TEMP_ROOT%\download\"
+"%ADB%" pull "%PHONE_WORLD%/." "%TEMP_ROOT%\download"
 if errorlevel 1 goto failed
 
 if not exist "%TEMP_ROOT%\download\level.dat" goto failed
